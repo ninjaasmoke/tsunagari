@@ -1,0 +1,11 @@
+POST http://127.0.0.1:8100/
+content-type: application/json
+
+{
+  "external_url": "http://localhost:8080/fetch",
+  "rest_method": "POST",
+  "request_headers": "{}",
+  "request_body:": "{\"customer_params\":[{\"name\":\"LoanNumber\",\"value\":\"5567873\"},{\"name\":\"CustomerId\",\"value\":\"CUST8472\"}]}",
+  "request_ttl": 150,
+  "response_call_back": "https://tsunagaritestcallback.free.beeceptor.com/fetchResponse"
+}
