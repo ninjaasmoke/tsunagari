@@ -75,7 +75,7 @@ async fn process_request(data: web::Json<RequestData>) -> Result<HttpResponse> {
                 }
             }
 
-            // Implement your logic to send the API response to the callback URL
+            // Implement logic to send the API response to the callback URL
             // ...
         }
         Err(err) => {
