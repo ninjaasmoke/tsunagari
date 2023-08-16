@@ -1,93 +1,72 @@
-use actix_web::{ web, App, HttpResponse, HttpServer, Result };
-use serde::{ Deserialize, Serialize };
-use std::time::Duration;
-use reqwest::Method;
-use reqwest;
-use serde_json::from_str;
+use hyper::{ Body, Request, Response, Server, StatusCode };
+use hyper::service::{ make_service_fn, service_fn };
+use std::convert::Infallible;
+use std::net::SocketAddr;
+use serde_json::json;
+use reqwest::Client;
 
-#[allow(dead_code)]
-#[allow(unused_variables)]
+mod utils;
+mod structs;
 
-// #[derive(Debug, Deserialize)]
-// pub struct RequestData {
-//     #[serde(rename = "external_url")]
-//     pub external_url: String,
-//     #[serde(rename = "rest_method")]
-//     pub rest_method: String,
-//     #[serde(rename = "request_headers")]
-//     pub request_headers: String,
-//     #[serde(rename = "request_body:")]
-//     pub request_body: String,
-//     #[serde(rename = "request_ttl")]
-//     pub request_ttl: u64,
-//     #[serde(rename = "response_call_back")]
-//     pub response_call_back: String,
-// }
-#[derive(Debug, Deserialize)]
-struct RequestData {
-    external_url: String,
-    rest_method: String,
-    request_headers: String,
-    request_body: String,
-    request_ttl: u64,
-    response_call_back: String,
+pub async fn make_external_request(
+    request_data: structs::RequestData
+) -> Result<String, reqwest::Error> {
+    let client = Client::new();
+    let timeout = std::time::Duration::from_secs(
+        std::cmp::min(request_data.request_ttl.unwrap_or(165), 165)
+    );
+
+    let response = client
+        .request(request_data.rest_method.clone(), &request_data.external_url)
+        .headers(request_data.request_headers.clone())
+        .body(request_data.request_body.unwrap_or_default())
+        .timeout(timeout)
+        .send().await?;
+
+    let response_text = response.text().await?;
+    Ok(response_text)
 }
 
-async fn process_request(data: web::Json<RequestData>) -> Result<HttpResponse> {
-    let external_url = &data.external_url;
-    let rest_method = match data.rest_method.as_str() {
-        "GET" => Method::GET,
-        "POST" => Method::POST,
-        "PUT" => Method::PUT,
-        &_ => Method::GET,
-    };
-    // let request_headers = &data.request_headers;
-    let request_body: serde_json::Value = from_str(&data.request_body).unwrap();
-    let request_ttl = data.request_ttl.min(165); // Set your max timeout
-    let response_call_back = &data.response_call_back;
+async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    let mut data = Vec::new();
 
-    let client = reqwest::Client::builder().build();
-
-    match client {
-        Ok(client) => {
-            let api_request_builder = client.request(rest_method, external_url);
-
-            let json_data = serde_json::to_vec(&request_body)?;
-
-            let json_string = String::from_utf8_lossy(&json_data);
-            println!("JSON data: {}", json_string);
-
-            let resp = api_request_builder
-                .timeout(Duration::from_secs(request_ttl))
-                .header("Content-Type", "application/json")
-                .body(json_data)
-                .send().await;
-
-            match resp {
-                Ok(resp) => {
-                    let response = resp.text().await.unwrap();
-                    println!("Response: {:?}", response);
-                    Ok(HttpResponse::Ok().json(response))
-                }
-                Err(e) => {
-                    println!("Error: {:?}", e);
-                    Ok(HttpResponse::InternalServerError().json(format!("{:?}", e)))
-                }
-            }
-
-            // Implement logic to send the API response to the callback URL
-            // ...
-        }
-        Err(err) => {
-            println!("Error: {:?}", err);
-            Ok(HttpResponse::InternalServerError().json(format!("{:?}", err)))
-        }
+    while let Some(chunk) = req.data().await {
+        data.extend_from_slice(&chunk);
     }
+    let requestData: serde_json::Value = serde_json::from_slice(&data).unwrap();
+
+    let ack_id = utils::get_ack_id();
+
+    let ack_response =
+        json!({
+        "status": "success",
+        "statusCode": 201,
+        "message": "Request received and ACK sent",
+        "ackId": ack_id.to_string(),
+        "requestData": requestData,
+    });
+
+    let response = Response::builder()
+        .status(StatusCode::CREATED)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_string(&ack_response).unwrap()))
+        .unwrap();
+
+    Ok(response)
 }
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    HttpServer::new(|| { App::new().route("/", web::post().to(process_request)) })
-        .bind("127.0.0.1:8100")?
-        .run().await
+#[tokio::main]
+async fn main() {
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let make_svc = make_service_fn(|_conn| {
+        async { Ok::<_, Infallible>(service_fn(handle_request)) }
+    });
+
+    let server = Server::bind(&addr).serve(make_svc);
+
+    println!("Listening on http://{}", addr);
+
+    if let Err(e) = server.await {
+        eprintln!("server error: {}", e);
+    }
 }

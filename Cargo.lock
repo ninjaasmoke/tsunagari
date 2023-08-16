@@ -1538,11 +1538,13 @@ version = "0.1.0"
 dependencies = [
  "actix-web",
  "futures",
+ "hyper",
  "reqwest",
  "serde",
  "serde_derive 0.9.15",
  "serde_json",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -1587,6 +1589,28 @@ dependencies = [
  "form_urlencoded",
  "idna",
  "percent-encoding",
+]
+
+[[package]]
+name = "uuid"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79daa5ed5740825c40b389c5e50312b9c86df53fccd33f281df655642b43869d"
+dependencies = [
+ "getrandom",
+ "rand",
+ "uuid-macro-internal",
+]
+
+[[package]]
+name = "uuid-macro-internal"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7e1ba1f333bd65ce3c9f27de592fcbc256dafe3af2717f56d7c87761fbaccf4"
+dependencies = [
+ "proc-macro2",
+ "quote 1.0.32",
+ "syn 2.0.28",
 ]
 
 [[package]]
