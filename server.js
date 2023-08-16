@@ -1,5 +1,41 @@
 const http = require('http');
-const axios = require('axios'); // Add this line to use Axios for asynchronous HTTP requests
+const axios = require('axios');
+const uuid = require('uuid');
+
+function getAckId() {
+  const tsunaPrefix = 'TSUNA';
+  const randomUuidPart = uuid.v4().substring(tsunaPrefix.length).replaceAll('-', '');
+  const customUuid = tsunaPrefix + randomUuidPart;
+  return customUuid;
+}
+
+async function makeExternalRequest(requestData) {
+  try {
+    const response = await axios({
+      method: requestData.rest_method,
+      url: requestData.external_url,
+      headers: requestData.request_headers,
+      data: requestData.request_body,
+      timeout: Math.min(requestData.request_ttl || 165, 165) * 1000
+    });
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+}
+
+async function makeCallbackRequest(callbackUrl, data) {
+  try {
+    const response = await axios({
+      method: "POST",
+      url: callbackUrl,
+      data: data
+    });
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+}
 
 const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/createRequest') {
@@ -12,40 +48,35 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const requestData = JSON.parse(data);
+        const ackId = getAckId();
         const ackResponse = {
           status: 'success',
           statusCode: 201,
           message: 'Request received and ACK sent',
+          ackId: ackId, // generate a random UUID here
           requestData: requestData
         };
         res.statusCode = 201;
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify(ackResponse));
+        
+        let externalResponse;
 
-        // Make asynchronous external request
         try {
-          const externalResponse = await axios({
-            method: requestData.rest_method,
-            url: requestData.external_url,
-            headers: requestData.request_headers,
-            data: requestData.request_body,
-            timeout: Math.min(requestData.request_ttl || 165, 165) * 1000
-          })
-          console.log('External request successful. Response:', externalResponse.data);
-          try {
-            const callback = await axios({
-              method: "POST",
-              url: requestData.response_call_back,
-              data: externalResponse.data
-            })
-          } catch (error) {
-            console.error("callback failed: ", error.message)
-          }
+          externalResponse = await makeExternalRequest(requestData);
         } catch (error) {
-          console.error('Error making external request:', error.message);
+          externalResponse = {
+            status: 'error',
+            statusCode: error.response.status,
+            error: error.response.data,
+          }
         }
+        await makeCallbackRequest(requestData.response_call_back, {
+          response: externalResponse,
+          ackId: ackId
+        });
       } catch (error) {
-        console.error('Error parsing JSON:', error);
+        console.error('Error :', error);
         res.statusCode = 400;
         res.end('Bad Request');
       }
