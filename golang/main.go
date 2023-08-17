@@ -33,7 +33,7 @@ type AckResponse struct {
 }
 
 type CallBackRequest struct {
-	RefId   string      `json:"refId"`
+	RefId   string      `json:"ref_id"`
 	Status  string      `json:"status"`
 	Payload interface{} `json:"payload"`
 }
